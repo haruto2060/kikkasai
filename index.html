@@ -3,8 +3,6 @@
 <head>
 <meta charset="UTF-8">
 <title>イカ焼き注文管理</title>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <style>
 body { font-family: sans-serif; padding: 20px; max-width: 700px; margin: auto; }
 button { margin: 5px 4px; padding: 10px 14px; font-size:16px; border-radius:6px; }
@@ -20,6 +18,7 @@ th, td { border: 1px solid #aaa; padding: 8px; text-align: center; font-size:15p
 <body>
 
 <h2>イカ焼き注文管理</h2>
+<div id="errorBox" style="display:none;background:#fdd;border:1px solid #c00;padding:8px;margin-bottom:10px;"></div>
 
 <!-- 整理番号 -->
 <div class="section section-scroll">
@@ -78,8 +77,47 @@ const firebaseConfig = {
   messagingSenderId: "805719964296",
   appId: "1:805719964296:web:804e39d34bf7096f0e7d3d"
 };
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
+let db = null;
+function showError(msg){
+  const el = document.getElementById("errorBox");
+  el.style.display = "block";
+  el.textContent = msg;
+}
+function loadScript(src){
+  return new Promise((resolve,reject)=>{
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = ()=>reject(new Error(src));
+    document.head.appendChild(s);
+  });
+}
+// 上から順に試す（最初がだめなら次の場所から読み込む）
+const firebaseSources = [
+  ["https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js",
+   "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"],
+  ["https://cdn.jsdelivr.net/npm/firebase@9.23.0/firebase-app-compat.js",
+   "https://cdn.jsdelivr.net/npm/firebase@9.23.0/firebase-firestore-compat.js"],
+  ["https://unpkg.com/firebase@9.23.0/firebase-app-compat.js",
+   "https://unpkg.com/firebase@9.23.0/firebase-firestore-compat.js"]
+];
+async function connectFirebase(){
+  let lastErr = null;
+  for(const srcs of firebaseSources){
+    try {
+      for(const s of srcs) await loadScript(s);
+      if(typeof firebase !== "undefined"){
+        firebase.initializeApp(firebaseConfig);
+        db = firebase.firestore();
+        return true;
+      }
+    } catch(e) {
+      lastErr = e;
+    }
+  }
+  showError("Firebaseに接続できません。読み込めなかった場所: " + (lastErr ? lastErr.message : "不明"));
+  return false;
+}
 
 let selected = { seq:null, type:'', qty:null };
 const itemPrices = {
@@ -122,6 +160,8 @@ function confirmAddOrder(){
   if(!selected.type){ alert("種類を選んでね"); return; }
   if(!selected.qty){ alert("数量を選んでね"); return; }
 
+  if(!db){ alert("Firebaseに接続できないため、注文を保存できません"); return; }
+
   const unitPrice = itemPrices[selected.type] || 0;
 
   const newOrder = {
@@ -141,14 +181,19 @@ function confirmAddOrder(){
 }
 
 // Firestoreリアルタイム取得
-db.collection("orders").orderBy("createdAt").onSnapshot(snapshot=>{
-  orders=[];
-  snapshot.forEach(doc=>{
-    const data=doc.data(); data.id=doc.id;
-    orders.push(data);
+function startListening(){
+  if(!db) return;
+  db.collection("orders").orderBy("createdAt").onSnapshot(snapshot=>{
+    orders=[];
+    snapshot.forEach(doc=>{
+      const data=doc.data(); data.id=doc.id;
+      orders.push(data);
+    });
+    renderOrders();
+  }, err=>{
+    showError("注文データを読み込めません: " + err.message);
   });
-  renderOrders();
-});
+}
 
 // 表示
 function renderOrders(){
@@ -174,7 +219,7 @@ function renderOrders(){
       <td>${o.qty}</td>
       <td>${itemTotal}</td>
       <td><button onclick="toggleStatus('${o.id}',${o.status})">${o.status===0?'未完了':'完了'}</button></td>
-      <td><button onclick="deleteOrder('${o.id}')">削除</button></td>
+      <td><button onclick="deleteOrder('${o.id}',this)">削除</button></td>
     `;
     tbody.appendChild(tr);
   });
@@ -186,15 +231,34 @@ function renderOrders(){
 // ステータス変更
 function toggleStatus(id,status){
   const newStatus=status===0?1:0;
-  db.collection("orders").doc(id).update({status:newStatus});
+  db.collection("orders").doc(id).update({status:newStatus}).catch(e=>{
+    showError("ステータスを変更できませんでした: " + e.message);
+  });
 }
 
 // 削除
-function deleteOrder(id){
-  if(confirm("削除しますか？")){
-    db.collection("orders").doc(id).delete();
+// 1回目で「本当に削除」に変わり、3秒以内にもう1回押すと削除（確認画面が出ない環境でも動く）
+function deleteOrder(id, btn){
+  if(btn.dataset.armed !== "1"){
+    btn.dataset.armed = "1";
+    btn.textContent = "本当に削除";
+    btn.style.background = "#fbb";
+    setTimeout(()=>{
+      if(btn.isConnected){
+        btn.dataset.armed = "0";
+        btn.textContent = "削除";
+        btn.style.background = "";
+      }
+    }, 3000);
+    return;
   }
+  db.collection("orders").doc(id).delete().catch(e=>{
+    showError("削除できませんでした: " + e.message);
+  });
 }
+
+// 起動
+connectFirebase().then(startListening);
 </script>
 </body>
 </html>
