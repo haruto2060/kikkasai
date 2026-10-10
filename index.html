@@ -30,9 +30,7 @@ th, td { border: 1px solid #aaa; padding: 8px; text-align: center; font-size:15p
 <div class="section">
   種類:
   <button onclick="toggleButton(this,'type','ノーマル')">ノーマル</button>
-  <button onclick="toggleButton(this,'type','明太')">明太</button>
   <button onclick="toggleButton(this,'type','チーズ')">チーズ</button>
-  <button onclick="toggleButton(this,'type','明太チーズ')">明太チーズ</button>
   <button onclick="toggleButton(this,'type','明太マヨ')">明太マヨ</button>
   <button onclick="toggleButton(this,'type','ネギポン')">ネギポン</button>
 </div>
@@ -119,9 +117,7 @@ async function connectFirebase(){
 let selected = { seq:null, type:'', qty:null };
 const itemPrices = {
   "ノーマル":500, 
-  "明太":600, 
   "チーズ":600, 
-  "明太チーズ":650, 
   "明太マヨ":650,
   "ネギポン":600
 };
